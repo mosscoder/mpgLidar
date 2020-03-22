@@ -19,18 +19,20 @@ opt_output_files(ctg) <- "./outDetect/{ID}"
 plan('multisession', workers = 26L)
 set_lidr_threads(26L)
 
-#Process to calc TPI
+#Fun to filter by tpi (also scan intensity)
 
-tpi <- function(las, ngb) {       # Do not respect the select argument by overwriting it
-  lmean <- grid_metrics(las, mean(Z), ngb)
-  MeanAddLas <- lasmergespatial(las = las, source = lmean, attribute = "ngbMean")
-  tpi <- MeanAddLas@data$Z - MeanAddLas$ngbMean
-  MeanAddLas <- lasadddata(MeanAddLas, tpi, 'tpi')
-  qts <- quantile(tpi, probs = c(.025,.975))
-  lowCut <- lasfilter(MeanAddLas, tpi > qts[1]) #cut extreme pits below 2.5 percentile tpi
-  hiCut <- lasfilter(MeanAddLas, tpi < qts[2]) #cut extreme peaks above 97.5 percentil tpi
-  hiCut$tpi <- NULL
-  return(hiCut)
+tpi <- function(las, ngb) {       
+  lmean <- grid_metrics(las, mean(Z), ngb) #calc mean in specified neighborhood
+  MeanAddLas <- lasmergespatial(las = las, source = lmean, attribute = "ngbMean") #extract neighborhood val from grid
+  tpi <- MeanAddLas$Z - MeanAddLas$ngbMean #subtract neighborhood mean from focal point
+  MeanAddLas <- lasadddata(MeanAddLas, tpi, 'tpi') #add tpi to cloud
+  tpiQuants <- quantile(tpi, probs = c(.025,.975)) #Upper and lower quantiles of tpi
+  #iQuant <- quantile(MeanAddLas$Intensity, probs = 0.025) #Lower quantile of scan intensity (2.5 percentile)
+  tpiLowCut <- lasfilter(MeanAddLas, tpi > tpiQuants[1]) #cut extreme pits below 2.5 percentile tpi
+  tpiHiCut <- lasfilter(tpiLowCut, tpi < tpiQuants[2]) #cut extreme peaks above 97.5 percentil tpi
+  #iLowCut <- lasfilter(tpiHiCut, tpiHiCut$Intensity > iQuant) #cut low scan intensities
+  tpiHiCut$tpi <- NULL #delete the tpi data from cloud
+  return(tpiHiCut)
 }
 
 tpi.LAScluster = function(las, ngb) {
@@ -38,7 +40,7 @@ tpi.LAScluster = function(las, ngb) {
   if (is.empty(las)) return(NULL)              # Exit early (see documentation)
   
   las <- tpi(las, ngb)      # calc tpi
-  las <- lasfilter(las, buffer == 0)# Don't forget to remove the buffer  
+  las <- lasfilter(las, buffer == 0) # Don't forget to remove the buffer  
   if(is.empty(las)) return(NULL)  
   return(las)                                  # Return the filtered point cloud
 }
@@ -48,35 +50,35 @@ options <- list(
   need_buffer = TRUE,         # Throw an error if buffer is 0
   automerge = TRUE)           # Automatically merge the output list (here into a LAScatalog)
 
-#Apply functionto the catalog
+#Apply noise filter to the catalog considering 1m neighborhood tpi
 ctgClean  <- catalog_apply(ctg, tpi.LAScluster, ngb = 1, .options = options)
-
+lidR:::catalog_laxindex(ctgClean) # generate .lax files to speed up process
 
 ### Classify points as canopy or ground with cloth simulator ####
+opt_chunk_buffer(ctgClean) <- 30
+opt_chunk_size(ctgClean) <- 400
+#opt_select(ctg)       <- "xyzr"  
+opt_output_files(ctgClean) <- "./classed/{ID}"
 
 c <- csf(sloop_smooth = TRUE, class_threshold = 0.1, cloth_resolution = 0.65)
 
-grd <- lasground(ctg, algorithm = c)
-#grd <- catalog('~/mpgPostdoc/projects/bareEarth/data/classed/')
+grd <- lasground(ctgClean, algorithm = c)
+#grd <- catalog('./classed/')
 
 opt_chunk_buffer(grd) <- 30
-opt_chunk_size(grd) <- 300
-#lidR:::catalog_laxindex(grd)
-opt_output_files(grd) <- "~/mpgPostdoc/projects/bareEarth/data/normalized/{ID}"
+opt_chunk_size(grd) <- 400
+lidR:::catalog_laxindex(grd)
+opt_output_files(grd) <- "./normalized/{ID}"
 
-nrm <- lasnormalize(las = grd, algorithm = knnidw(), na.rm = T)
-
-opt_chunk_buffer(nrm) <- 30
-opt_chunk_size(nrm) <- 300
-#lidR:::catalog_laxindex(nrm)
-opt_output_files(nrm) <- "~/mpgPostdoc/projects/bareEarth/data/terrain/{ID}"
+nrm <- lasnormalize(las = grd, algorithm = tin(), na.rm = T)
+lidR:::catalog_laxindex(nrm)
 
 #### Testing tuning parameters of CSF algorithm ####
 #Found that no disadvantage to class threshold set low, 
 #Too fine of cloth resolution failed to classify dense canopy as canopy, 
 #Too coarse rendered pixelated canopy mask
 #.65 (meters?) best compromise
-# test <- readLAS('~/mpgPostdoc/projects/bareEarth/data/classed/323.las')
+# test <- readLAS('./classed/323.las')
 # 
 # set_lidr_threads(1L)
 # clothTester <- function(cr){
@@ -84,7 +86,7 @@ opt_output_files(nrm) <- "~/mpgPostdoc/projects/bareEarth/data/terrain/{ID}"
 #   #ct <- g$ct[x]
 #   c <- csf(sloop_smooth = T, class_threshold = 0.1, cloth_resolution = cr,iterations = 1000)
 #   grnd <- lasground(test, algorithm = c)
-#   writeLAS(grnd, paste0('~/mpgPostdoc/projects/bareEarth/data/clothTest/','cr',cr,'.las'))
+#   writeLAS(grnd, paste0('./clothTest/','cr',cr,'.las'))
 # }
 # 
 # crs <- seq(from = .5, to =1, by = 0.05)
@@ -97,7 +99,7 @@ opt_output_files(nrm) <- "~/mpgPostdoc/projects/bareEarth/data/terrain/{ID}"
 
 #### Test interp alg ####
 
-# test <-readLAS('~/mpgPostdoc/projects/bareEarth/data/classed/323.las')
+# test <-readLAS('./classed/323.las')
 # 
 # set_lidr_threads(1L)
 # 
