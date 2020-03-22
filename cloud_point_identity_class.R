@@ -4,14 +4,55 @@ library(parallel)
 library(mapview)
 library(raster)
 
-ctg <- catalog('~/mpgPostdoc/projects/bareEarth/data/sourceCloud/')
+setwd('~/mpgPostdoc/projects/bareEarth/data/')
 
+#### First identify outliers using TPI style calculation ####
+ctg <- catalog('./sourceCloud/') #note this has a .lax to speed up processing
+
+#Set tiling schema
 opt_chunk_buffer(ctg) <- 30
-opt_chunk_size(ctg) <- 300
-opt_output_files(ctg) <- "~/mpgPostdoc/projects/bareEarth/data/classed/{ID}"
+opt_chunk_size(ctg) <- 400
+#opt_select(ctg)       <- "xyzr"  
+opt_output_files(ctg) <- "./outDetect/{ID}"
 
+#Set parallel processing parameters
 plan('multisession', workers = 26L)
 set_lidr_threads(26L)
+
+#Process to calc TPI
+
+tpi <- function(las, ngb) {       # Do not respect the select argument by overwriting it
+  lmean <- grid_metrics(las, mean(Z), ngb)
+  MeanAddLas <- lasmergespatial(las = las, source = lmean, attribute = "ngbMean")
+  tpi <- MeanAddLas@data$Z - MeanAddLas$ngbMean
+  MeanAddLas <- lasadddata(MeanAddLas, tpi, 'tpi')
+  qts <- quantile(tpi, probs = c(.025,.975))
+  lowCut <- lasfilter(MeanAddLas, tpi > qts[1]) #cut extreme pits below 2.5 percentile tpi
+  hiCut <- lasfilter(MeanAddLas, tpi < qts[2]) #cut extreme peaks above 97.5 percentil tpi
+  hiCut$tpi <- NULL
+  return(hiCut)
+}
+
+tpi.LAScluster = function(las, ngb) {
+  las <- readLAS(las)                          # Read the LAScluster
+  if (is.empty(las)) return(NULL)              # Exit early (see documentation)
+  
+  las <- tpi(las, ngb)      # calc tpi
+  las <- lasfilter(las, buffer == 0)# Don't forget to remove the buffer  
+  if(is.empty(las)) return(NULL)  
+  return(las)                                  # Return the filtered point cloud
+}
+
+options <- list(
+  need_output_file = TRUE,    # Throw an error if no output template is provided
+  need_buffer = TRUE,         # Throw an error if buffer is 0
+  automerge = TRUE)           # Automatically merge the output list (here into a LAScatalog)
+
+#Apply functionto the catalog
+ctgClean  <- catalog_apply(ctg, tpi.LAScluster, ngb = 1, .options = options)
+
+
+### Classify points as canopy or ground with cloth simulator ####
 
 c <- csf(sloop_smooth = TRUE, class_threshold = 0.1, cloth_resolution = 0.65)
 
@@ -29,10 +70,6 @@ opt_chunk_buffer(nrm) <- 30
 opt_chunk_size(nrm) <- 300
 #lidR:::catalog_laxindex(nrm)
 opt_output_files(nrm) <- "~/mpgPostdoc/projects/bareEarth/data/terrain/{ID}"
-
-dtm <- grid_terrain(nrm, res = 0.15, algorithm = knnidw())
-
-plot(grd, mapview = T, map.type = "Esri.WorldImagery")
 
 #### Testing tuning parameters of CSF algorithm ####
 #Found that no disadvantage to class threshold set low, 
@@ -60,28 +97,28 @@ plot(grd, mapview = T, map.type = "Esri.WorldImagery")
 
 #### Test interp alg ####
 
-test <-readLAS('~/mpgPostdoc/projects/bareEarth/data/classed/323.las')
-
-set_lidr_threads(1L)
-
-# test knn function
-
-neighbors <- 10:20
-
-krigTest <- function(n){
-
-  ras <- grid_terrain(test, res = 0.15, algorithm = kriging(k = n))
-  slp <- terrain(ras)
-  asp <- terrain(ras, opt='aspect')
-  hill <- hillShade(slope = slp, aspect = asp, angle = 30, direction = 215)
-  
-}
-
-st <- stack(mclapply(FUN = krigTest, X = neighbors, mc.cores = 11))
-
-install.packages('leafsync')
-
-lapply(X = st, FUN = function(x){mapview(st[[x]])}) %>% sync()
+# test <-readLAS('~/mpgPostdoc/projects/bareEarth/data/classed/323.las')
+# 
+# set_lidr_threads(1L)
+# 
+# # test knn function
+# 
+# neighbors <- 10:20
+# 
+# krigTest <- function(n){
+# 
+#   ras <- grid_terrain(test, res = 0.15, algorithm = kriging(k = n))
+#   slp <- terrain(ras)
+#   asp <- terrain(ras, opt='aspect')
+#   hill <- hillShade(slope = slp, aspect = asp, angle = 30, direction = 215)
+#   
+# }
+# 
+# st <- stack(mclapply(FUN = krigTest, X = neighbors, mc.cores = 11))
+# 
+# install.packages('leafsync')
+# 
+# lapply(X = st, FUN = function(x){mapview(st[[x]])}) %>% sync()
 
 
 
