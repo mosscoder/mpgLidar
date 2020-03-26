@@ -130,7 +130,7 @@ n2 <- left_join(n, envDat)
 mod <- ranger(truth %>% as.factor() ~ ., 
               data = n2 %>% select(truth,res, z, slope, tpi100), 
               importance = 'permutation', 
-              num.trees = 100) #low number for speed, gives good OOB
+              num.trees = 100) #low number for speed, gives same good OOB
 
 #turn our topo raster data into a data.frame
 rasPts <- rasterToPoints(st[[c('z','slope','tpi100')]]) %>% as.data.frame() %>% na.omit()
@@ -143,7 +143,7 @@ resPicker <- function(x){ #a function to test a range of cloth resolutions, iden
   
   res <- numeric(1L) #create empty scalar to receive res in for loop
   
-  for(i in seq(from = .3, to = 2.5, by = 0.1)) { #check truth across res grid, break loop when it truth is 1 (correct)
+  for(i in rev(seq(from = .3, to = 2.5, by = 0.1))) { #check truth across res grid, break loop when it truth is 1 (correct)
     pred <- predict(mod,
                     data.frame(res = i,
                                z = fz,
@@ -174,10 +174,10 @@ resPickedClean <- resPicked %>% mutate(cells = cells) %>% filter(! cells %in% na
 
 raster::values(resRas)[resPickedClean$cells ] <- resPickedClean$res
 
-writeRaster(resRas, './clothRes/clothRes.tif', format ='GTiff')
+writeRaster(resRas, './clothRes/clothRes.tif', format ='GTiff', overwrite = T)
 plot(resRas)
 
-ggplot(resPicked, aes(x = x, y = y, fill = res)) +
+ggplot(resPicked %>% mutate(cells = cells) %>% filter(! cells %in% nas), aes(x = x, y = y, fill = res)) +
   geom_raster() +
   scale_fill_viridis_c()
 
