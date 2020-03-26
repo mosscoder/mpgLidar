@@ -16,8 +16,8 @@ opt_chunk_size(ctg) <- 400
 opt_output_files(ctg) <- "./outDetect/{ID}"
 
 #Set parallel processing parameters
-plan('multisession', workers = 26L)
-set_lidr_threads(26L)
+plan('multisession', workers = 25L)
+set_lidr_threads(25L)
 
 #Fun to filter by tpi (also scan intensity)
 
@@ -52,7 +52,8 @@ options <- list(
 
 #Apply noise filter to the catalog considering 1m neighborhood tpi
 ctgClean  <- catalog_apply(ctg, tpi.LAScluster, ngb = 1, .options = options)
-lidR:::catalog_laxindex(ctgClean) # generate .lax files to speed up process
+#lidR:::catalog_laxindex(ctgClean) # generate .lax files to speed up process
+ctgClean <- catalog('./outDetect/')
 
 ### Classify points as canopy or ground with cloth simulator ####
 opt_chunk_buffer(ctgClean) <- 30
@@ -60,7 +61,7 @@ opt_chunk_size(ctgClean) <- 400
 #opt_select(ctg)       <- "xyzr"  
 opt_output_files(ctgClean) <- "./classed/{ID}"
 
-c <- csf(sloop_smooth = TRUE, class_threshold = 0.1, cloth_resolution = 0.65)
+c <- csf(sloop_smooth = TRUE, class_threshold = 0.1, cloth_resolution = 2, rigidness = 1, time_step = .92)
 
 grd <- lasground(ctgClean, algorithm = c)
 #grd <- catalog('./classed/')

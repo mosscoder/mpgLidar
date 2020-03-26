@@ -14,8 +14,8 @@ opt_select(grd) <- 'xyzc'
 opt_filter(grd) <- '-keep_class 2 9'
 opt_output_files(grd) <- "./terrain/{ID}"
 
-plan('multisession', workers = 13L)
-set_lidr_threads(13L)
+plan('multisession', workers = 20L)
+set_lidr_threads(20L)
 
 ter <- grid_terrain(grd, res = 0.15, algorithm = knnidw())
 
@@ -26,4 +26,4 @@ opt_chunk_size(nrml) <- 300
 opt_select(nrml) <- 'xyzc'
 opt_filter(nrml) <- "-drop_z_below 0"
 opt_output_files(nrml) <- "./canopy/{ID}"
-canopy <- grid_canopy(nrml, 0.15, pitfree(c(0,2,5,10,15), c(0,1), subcircle = 0.2))
+canopy <- grid_canopy(nrml, 0.15, pitfree( subcircle = 0.2))
